@@ -3,11 +3,9 @@
 namespace App\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class FaceController extends AbstractController
@@ -16,77 +14,106 @@ class FaceController extends AbstractController
         private readonly HttpClientInterface $httpClient,
     ) {}
 
-    private function faceBaseUrl(): string
+    private function getFlaskBaseUrl(): string
     {
-        // Plus fiable d'essayer $_SERVER puis $_ENV
-        $baseUrl = $_SERVER['FACE_SERVICE_URL']
-            ?? $_ENV['FACE_SERVICE_URL']
-            ?? 'http://127.0.0.1:5000';
-
+        // env FACE_SERVICE_URL ou 127.0.0.1:5000 par défaut
+        $baseUrl = $_ENV['FACE_SERVICE_URL'] ?? 'http://127.0.0.1:5000';
         return rtrim($baseUrl, '/');
     }
 
-    private function jsonError(string $message, int $status = 400, array $extra = []): JsonResponse
+    /**
+     * Essaie de récupérer l'image :
+     *  - d'abord depuis un fichier uploadé "image" (multipart/form-data)
+     *  - sinon depuis le JSON {"image": "..."}
+     */
+    private function extractImageBase64(Request $request): ?string
     {
-        return $this->json(array_merge([
-            'success' => false,
-            'error' => $message,
-        ], $extra), $status);
-    }
-
-    private function extractImage(Request $request): ?UploadedFile
-    {
-        // Attendu: multipart/form-data avec un champ "image"
+        // 1) multipart/form-data : fichier "image"
         $file = $request->files->get('image');
-        return $file instanceof UploadedFile ? $file : null;
-    }
-
-    private function validateImage(UploadedFile $image): ?JsonResponse
-    {
-        if (!$image->isValid()) {
-            return $this->jsonError('Fichier image invalide (upload error).', 400);
+        if ($file) {
+            $contents = @file_get_contents($file->getPathname());
+            if ($contents !== false) {
+                return base64_encode($contents);
+            }
         }
 
-        // Limite 6MB (ajuste si tu veux)
-        if ($image->getSize() !== null && $image->getSize() > 6 * 1024 * 1024) {
-            return $this->jsonError('Image trop grande (max 6MB).', 413);
-        }
+        // 2) JSON : {"image": "..."}
+        $raw = $request->getContent();
+        if (!empty($raw)) {
+            try {
+                $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\Throwable $e) {
+                $data = null;
+            }
 
-        $mime = $image->getMimeType() ?? '';
-        $allowed = ['image/jpeg', 'image/png', 'image/webp'];
-
-        if (!in_array($mime, $allowed, true)) {
-            return $this->jsonError('Format image non supporté. Utilise JPG/PNG/WebP.', 415, [
-                'mime' => $mime,
-            ]);
+            if (is_array($data) && isset($data['image']) && is_string($data['image'])) {
+                return $data['image'];
+            }
         }
 
         return null;
     }
 
+    private function callFlask(string $path, array $payload): array
+    {
+        $baseUrl = $this->getFlaskBaseUrl();
+        $url     = $baseUrl . $path;
+
+        try {
+            $response = $this->httpClient->request('POST', $url, [
+                'json'    => $payload,
+                'timeout' => 10,
+            ]);
+
+            $status = $response->getStatusCode();
+            $body   = null;
+            try {
+                $body = $response->toArray(false);
+            } catch (\Throwable) {
+                $body = $response->getContent(false);
+            }
+
+            return [
+                'ok'     => $status >= 200 && $status < 300,
+                'status' => $status,
+                'body'   => $body,
+                'url'    => $url,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'     => false,
+                'status' => 0,
+                'body'   => $e->getMessage(),
+                'url'    => $url,
+            ];
+        }
+    }
+
+    // ---------------- HEALTH ----------------
+
     #[Route('/api/face/health', name: 'api_face_health', methods: ['GET'])]
     public function health(): JsonResponse
     {
-        $flaskUrl = $this->faceBaseUrl() . '/health';
+        $baseUrl = $this->getFlaskBaseUrl();
+        $flaskUrl = $baseUrl . '/health';
 
         try {
             $response = $this->httpClient->request('GET', $flaskUrl, [
                 'timeout' => 2.0,
             ]);
 
-            $status = $response->getStatusCode();
-            $raw = $response->getContent(false);
-            $data = json_decode($raw, true) ?? ['raw' => $raw];
+            $statusCode = $response->getStatusCode();
+            $data       = $response->toArray(false);
 
-            $flaskOk = ($status === 200) && (($data['success'] ?? false) === true);
+            $flaskOk = ($statusCode === 200) && (($data['success'] ?? false) === true);
 
             return $this->json([
                 'success' => $flaskOk,
                 'symfony' => ['success' => true],
-                'flask' => [
-                    'url' => $flaskUrl,
-                    'status' => $status,
-                    'body' => $data,
+                'flask'   => [
+                    'url'    => $flaskUrl,
+                    'status' => $statusCode,
+                    'body'   => $data,
                 ],
             ], $flaskOk ? 200 : 502);
 
@@ -94,143 +121,74 @@ class FaceController extends AbstractController
             return $this->json([
                 'success' => false,
                 'symfony' => ['success' => true],
-                'flask' => [
-                    'url' => $flaskUrl,
+                'flask'   => [
+                    'url'   => $flaskUrl,
                     'error' => $e->getMessage(),
                 ],
             ], 502);
         }
     }
 
-    /**
-     * REGISTER (enrôlement) :
-     * - Envoie une image au service Flask pour enregistrer le visage d'un employé.
-     *
-     * Attendu côté client:
-     *   POST /api/face/register/123
-     *   Content-Type: multipart/form-data
-     *   image=<fichier>
-     */
-    #[Route('/api/face/register/{employeId}', name: 'api_face_register', methods: ['POST'])]
-    public function register(Request $request, int $employeId): JsonResponse
+    // ---------------- REGISTER ----------------
+
+    #[Route('/api/face/register/{id}', name: 'api_face_register', methods: ['POST'])]
+    public function register(int $id, Request $request): JsonResponse
     {
-        $image = $this->extractImage($request);
-        if (!$image) {
-            return $this->jsonError('Champ "image" manquant (multipart/form-data).', 400);
-        }
+        $imageB64 = $this->extractImageBase64($request);
 
-        if ($err = $this->validateImage($image)) {
-            return $err;
-        }
-
-        // Deux variantes fréquentes côté Flask:
-        // 1) POST /register/<employeId>
-        // 2) POST /register (avec employeId dans form-data)
-        //
-        // Ici je tente la variante 1 (la plus simple).
-        $flaskUrl = $this->faceBaseUrl() . '/register/' . $employeId;
-
-        try {
-            $response = $this->httpClient->request('POST', $flaskUrl, [
-                'timeout' => 20.0,
-                'headers' => [
-                    // optionnel : certains serveurs aiment le header
-                    'Accept' => 'application/json',
-                ],
-                'body' => [
-                    // Le champ doit s'appeler "image" (adapte si ton Flask utilise un autre nom)
-                    'image' => fopen($image->getPathname(), 'rb'),
-                    // Si ton Flask est en variante 2, dé-commente ceci et change l'URL:
-                    // 'employeId' => (string) $employeId,
-                ],
-            ]);
-
-            $status = $response->getStatusCode();
-            $raw = $response->getContent(false);
-            $data = json_decode($raw, true) ?? ['raw' => $raw];
-
-            $ok = ($status >= 200 && $status < 300) && (($data['success'] ?? true) !== false);
-
+        if ($imageB64 === null) {
             return $this->json([
-                'success' => $ok,
-                'symfony' => ['success' => true],
-                'flask' => [
-                    'url' => $flaskUrl,
-                    'status' => $status,
-                    'body' => $data,
-                ],
-            ], $ok ? 200 : 502);
-
-        } catch (TransportExceptionInterface $e) {
-            return $this->jsonError('Impossible de contacter le service Flask.', 502, [
-                'flask' => ['url' => $flaskUrl, 'error' => $e->getMessage()],
-            ]);
-        } catch (\Throwable $e) {
-            return $this->jsonError('Erreur côté Symfony lors de l’appel Flask.', 502, [
-                'flask' => ['url' => $flaskUrl, 'error' => $e->getMessage()],
-            ]);
+                'success' => false,
+                'error'   => 'Missing "image" (file upload or JSON field)',
+            ], 400);
         }
+
+        $payload = [
+            'employee_id' => (string)$id,
+            'image'       => $imageB64,
+        ];
+
+        $flaskRes = $this->callFlask('/register', $payload);
+
+        return $this->json([
+            'success' => $flaskRes['ok'],
+            'symfony' => ['success' => true],
+            'flask'   => [
+                'url'    => $flaskRes['url'],
+                'status' => $flaskRes['status'],
+                'body'   => $flaskRes['body'],
+            ],
+        ], $flaskRes['ok'] ? 200 : 502);
     }
 
-    /**
-     * RECOGNIZE (reconnaissance) :
-     * - Envoie une image au service Flask pour détecter/reconnaître un visage.
-     *
-     * Attendu côté client:
-     *   POST /api/face/recognize
-     *   Content-Type: multipart/form-data
-     *   image=<fichier>
-     */
+    // ---------------- RECOGNIZE ----------------
+
     #[Route('/api/face/recognize', name: 'api_face_recognize', methods: ['POST'])]
     public function recognize(Request $request): JsonResponse
     {
-        $image = $this->extractImage($request);
-        if (!$image) {
-            return $this->jsonError('Champ "image" manquant (multipart/form-data).', 400);
-        }
+        $imageB64 = $this->extractImageBase64($request);
 
-        if ($err = $this->validateImage($image)) {
-            return $err;
-        }
-
-        $flaskUrl = $this->faceBaseUrl() . '/recognize';
-
-        try {
-            $response = $this->httpClient->request('POST', $flaskUrl, [
-                'timeout' => 20.0,
-                'headers' => [
-                    'Accept' => 'application/json',
-                ],
-                'body' => [
-                    'image' => fopen($image->getPathname(), 'rb'),
-                ],
-            ]);
-
-            $status = $response->getStatusCode();
-            $raw = $response->getContent(false);
-            $data = json_decode($raw, true) ?? ['raw' => $raw];
-
-            // Ici "ok" dépend de ton Flask (souvent success=true)
-            $ok = ($status >= 200 && $status < 300) && (($data['success'] ?? true) !== false);
-
+        if ($imageB64 === null) {
             return $this->json([
-                'success' => $ok,
-                'symfony' => ['success' => true],
-                'flask' => [
-                    'url' => $flaskUrl,
-                    'status' => $status,
-                    'body' => $data,
-                ],
-            ], $ok ? 200 : 502);
-
-        } catch (TransportExceptionInterface $e) {
-            return $this->jsonError('Impossible de contacter le service Flask.', 502, [
-                'flask' => ['url' => $flaskUrl, 'error' => $e->getMessage()],
-            ]);
-        } catch (\Throwable $e) {
-            return $this->jsonError('Erreur côté Symfony lors de l’appel Flask.', 502, [
-                'flask' => ['url' => $flaskUrl, 'error' => $e->getMessage()],
-            ]);
+                'success' => false,
+                'error'   => 'Missing "image" (file upload or JSON field)',
+            ], 400);
         }
+
+        $payload = [
+            'image' => $imageB64,
+        ];
+
+        $flaskRes = $this->callFlask('/recognize', $payload);
+
+        return $this->json([
+            'success' => $flaskRes['ok'],
+            'symfony' => ['success' => true],
+            'flask'   => [
+                'url'    => $flaskRes['url'],
+                'status' => $flaskRes['status'],
+                'body'   => $flaskRes['body'],
+            ],
+        ], $flaskRes['ok'] ? 200 : 502);
     }
 }
