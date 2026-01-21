@@ -9,6 +9,7 @@
         "ext-iconv": "*",
         "api-platform/doctrine-orm": "^4.2.11",
         "api-platform/symfony": "^4.2.11",
+        "doctrine/dbal": "^4.4",
         "doctrine/doctrine-bundle": "^3.2.1",
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.6",

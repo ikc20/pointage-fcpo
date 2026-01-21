@@ -1,5 +1,5 @@
 <?php
-
+ 
 namespace App\Entity;
 
 use App\Repository\EmployeRepository;
@@ -25,6 +25,9 @@ class Employe
 
     #[ORM\Column(length: 255, unique: true)]
     private ?string $email = null;
+
+   #[ORM\OneToOne(mappedBy: 'employe', targetEntity: FaceEncoding::class, cascade: ['persist', 'remove'])]
+    private ?FaceEncoding $faceEncoding = null;
 
     #[ORM\Column(length: 50, unique: true)]
     private ?string $matricule = null;
@@ -135,21 +138,38 @@ class Employe
         return $this;
     }
 
+   public function getFaceEncoding(): ?FaceEncoding
+    {
+    return $this->faceEncoding;
+    } 
+
+public function setFaceEncoding(?FaceEncoding $faceEncoding): self
+    { 
+    $this->faceEncoding = $faceEncoding;
+
+    if ($faceEncoding && $faceEncoding->getEmploye() !== $this) {
+        $faceEncoding->setEmploye($this);
+    }
+
+    return $this;
+     }
+ 
    public function getUser(): ?User
-{
+    {
     return $this->user;
-}
+    }
 
 public function setUser(?User $user): static
-{
+   {
     $this->user = $user;
 
     if ($user && $user->getEmploye() !== $this) {
         $user->setEmploye($this);
     }
+ 
 
     return $this;
-}
+    }
 
 
     public function getMatricule(): ?string
