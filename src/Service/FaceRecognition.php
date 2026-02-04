@@ -25,6 +25,7 @@ class FaceRecognition
         try {
             $response = $this->httpClient->request('POST', $this->pythonServiceUrl . '/register', [
                 'json' => [
+                    //'employee_id' => $employeId
                     'employee_id' => $employeId,
                     'image' => $imageBase64,
                     'timestamp' => time()
