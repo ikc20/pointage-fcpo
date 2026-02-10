@@ -10,9 +10,7 @@ services:
             - '../src/Entity/'
             - '../src/Kernel.php'
 
-    App\Service\FaceRecognition:
-        arguments:
-            $pythonServiceUrl: '%env(FACE_RECOGNITION_SERVICE_URL)%'
+   
 
     App\Service\QrCode:
         arguments:

@@ -1,49 +1,112 @@
 <?php
-// src/Controller/PointageController.php
 
 namespace App\Controller;
 
 use App\Entity\Pointage;
+use App\Entity\FaceEncoding;
+use App\Repository\EmployeRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 #[Route('/api/pointages')]
 class PointageController extends AbstractController
 {
-    #[Route('/', name: 'api_pointages_index', methods: ['GET'])]
-    public function index(EntityManagerInterface $em, Request $request): JsonResponse
+    public function __construct(
+        private HttpClientInterface $httpClient,
+        private EmployeRepository $employeRepo,
+        private EntityManagerInterface $em
+    ) {}
+
+    #[Route('/face', name: 'api_pointage_face', methods: ['POST'])]
+    public function pointageParVisage(Request $request): JsonResponse
     {
-        try {
-            $pointages = $em->getRepository(Pointage::class)->findBy([], ['date_heure' => 'DESC'], 50);
-            $data = [];
-            
-            foreach ($pointages as $pointage) {
-                $data[] = [
-                    'id' => $pointage->getId(),
-                    'date_heure' => $pointage->getDateHeure() ? 
-                        $pointage->getDateHeure()->format('Y-m-d H:i:s') : null,
-                    'type' => $pointage->getType(),
-                    'employe_id' => $pointage->getEmploye() ? $pointage->getEmploye()->getId() : null,
-                    'employe_nom' => $pointage->getEmploye() ? 
-                        $pointage->getEmploye()->getNomComplet() : null
-                ];
-            }
-            
-            return $this->json([
-                'success' => true,
-                'data' => $data,
-                'count' => count($data)
-            ]);
-            
-        } catch (\Exception $e) {
+        $data = json_decode($request->getContent(), true);
+        $image = $data['image'] ?? null;
+        $latitude = $data['latitude'] ?? null;
+        $longitude = $data['longitude'] ?? null;
+
+        if (!$image) {
             return $this->json([
                 'success' => false,
-                'error' => $e->getMessage()
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+                'error' => 'Image requise'
+            ], 400);
         }
+
+        $response = $this->httpClient->request('POST', $_ENV['FACE_SERVICE_URL'] . '/match', [
+            'json' => [
+                'image' => $image,
+                'candidates' => $this->getCandidates(),
+                'threshold' => 0.60
+            ],
+        ]);
+
+        $result = $response->toArray(false);
+
+       $employeeId = $result['employee_id'] ?? null;
+$confidence = $result['confidence'] ?? 0;
+$distance   = $result['distance'] ?? null;
+
+// seuil de sécurité
+$MIN_CONFIDENCE = 0.60;
+
+if (!$employeeId || $confidence < $MIN_CONFIDENCE) {
+    return $this->json([
+        'success' => false,
+        'message' => 'Visage non reconnu',
+        'confidence' => $confidence,
+        'distance' => $distance
+    ]);
+}
+
+        $employe = $this->employeRepo->find($employeeId);
+
+        $dernier = $employe->getDernierPointage();
+        $type = 'ENTREE';
+
+        if ($dernier && $dernier->getType() === 'ENTREE') {
+            $type = 'SORTIE';
+        }
+
+        $pointage = new Pointage();
+        $pointage->setEmploye($employe);
+        $pointage->setType($type);
+        $pointage->setConfidence($confidence);
+
+        if ($latitude) $pointage->setLatitude($latitude);
+        if ($longitude) $pointage->setLongitude($longitude);
+
+        $this->em->persist($pointage);
+        $this->em->flush();
+
+        return $this->json([
+            'success' => true,
+            'message' => $type === 'ENTREE' ? 'Bienvenue' : 'Au revoir',
+            'data' => $pointage->toArray()
+        ]);
+    }
+
+    private function getCandidates(): array
+    {
+        $rows = $this->em->getRepository(FaceEncoding::class)->findAll();
+
+        $candidates = [];
+        foreach ($rows as $row) {
+            $emp = $row->getEmploye();
+            if (!$emp) continue;
+
+            $enc = json_decode($row->getEncoding(), true);
+            if (!is_array($enc)) continue;
+
+            $candidates[] = [
+                'employee_id' => (string) $emp->getId(),
+                'encoding' => $enc,
+            ];
+        }
+
+        return $candidates;
     }
 }

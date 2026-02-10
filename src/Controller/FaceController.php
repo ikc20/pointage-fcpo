@@ -254,67 +254,69 @@ class FaceController extends AbstractController
     }
 
     // ---------------- RECOGNIZE ----------------
-    // ✅ CORRIGÉ: envoie candidates + threshold à Flask /match
-
     #[Route('/api/face/recognize', name: 'api_face_recognize', methods: ['POST'])]
-    public function recognize(Request $request): JsonResponse
-    {
-        $imageB64 = $this->extractImageBase64($request);
-        if ($imageB64 === null) {
-            return $this->json(['success' => false, 'error' => 'Missing "image" (file upload or JSON field)'], 400);
-        }
-
-        $rows = $this->faceEncodingRepo->findAll();
-        if (!$rows) {
-            return $this->json([
-                'success'     => true,
-                'employee_id' => null,
-                'confidence'  => 0.0,
-                'distance'    => null,
-                'reason'      => 'no_known_faces_in_db',
-            ], 200);
-        }
-
-        $candidates = [];
-        foreach ($rows as $row) {
-            $emp = $row->getEmploye();
-            if (!$emp) continue;
-
-            $decoded = json_decode($row->getEncoding(), true);
-            if (!is_array($decoded) || count($decoded) === 0) continue;
-
-            $candidates[] = [
-                'employee_id' => (string) $emp->getId(),
-                'encoding'    => $decoded,
-            ];
-        }
-
-        // ✅ IMPORTANT: Flask /match attend "candidates" (pas "known")
-        $flaskRes = $this->callFlaskPost('/match', [
-            'image'      => $imageB64,
-            'candidates' => $candidates,
-            'threshold'  => 0.60,
-        ], 25.0);
-
-        if (!$flaskRes['network_ok']) {
-            return $this->json([
-                'success' => false,
-                'symfony' => ['success' => true],
-                'flask'   => ['url' => $flaskRes['url'], 'error' => $flaskRes['body']],
-            ], 502);
-        }
-
-        // On renvoie exactement ce que Flask répond (employee_id, distance, confidence, etc.)
-        return $this->json([
-            'success' => $flaskRes['ok'],
-            'symfony' => ['success' => true],
-            'flask'   => [
-                'url'    => $flaskRes['url'],
-                'status' => $flaskRes['status'],
-                'body'   => $flaskRes['body'],
-            ],
-        ], $flaskRes['status']);
+public function recognize(Request $request): JsonResponse
+{
+    $imageB64 = $this->extractImageBase64($request);
+    if ($imageB64 === null) {
+        return $this->json(['success' => false, 'error' => 'Missing "image"'], 400);
     }
+
+    $rows = $this->faceEncodingRepo->findAll();
+    if (!$rows) {
+        return $this->json([
+            'success'     => false,
+            'employee_id' => null,
+            'confidence'  => 0.0,
+            'distance'    => null,
+            'reason'      => 'no_known_faces_in_db',
+        ], 200);
+    }
+
+    $candidates = [];
+    foreach ($rows as $row) {
+        $emp = $row->getEmploye();
+        if (!$emp) continue;
+
+        $decoded = json_decode($row->getEncoding(), true);
+        if (!is_array($decoded) || count($decoded) === 0) continue;
+
+        $candidates[] = [
+            'employee_id' => (string) $emp->getId(),
+            'encoding'    => $decoded,
+        ];
+    }
+
+    $flaskRes = $this->callFlaskPost('/match', [
+        'image'      => $imageB64,
+        'candidates' => $candidates,
+        'threshold'  => 0.50, // seuil plus strict
+    ], 25.0);
+
+    if (!$flaskRes['network_ok']) {
+        return $this->json([
+            'success' => false,
+            'flask'   => [
+                'url'   => $flaskRes['url'],
+                'error' => $flaskRes['body'],
+            ],
+        ], 502);
+    }
+
+    $body = is_array($flaskRes['body']) ? $flaskRes['body'] : [];
+
+    $employeeId = $body['employee_id'] ?? null;
+    $confidence = $body['confidence'] ?? 0.0;
+    $distance   = $body['distance'] ?? null;
+
+    return $this->json([
+        'success'     => $employeeId !== null,
+        'employee_id' => $employeeId,
+        'confidence'  => $confidence,
+        'distance'    => $distance,
+    ], 200);
+}
+
 
     // ---------------- RESET DB ----------------
 

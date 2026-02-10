@@ -8,7 +8,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-DEFAULT_THRESHOLD = float(os.environ.get("FACE_THRESHOLD", "0.60"))
+DEFAULT_THRESHOLD = float(os.environ.get("FACE_THRESHOLD", "0.50"))
 
 
 def try_import_face_recognition():
@@ -201,4 +201,4 @@ def match():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
