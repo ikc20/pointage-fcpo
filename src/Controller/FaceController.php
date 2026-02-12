@@ -91,8 +91,9 @@ class FaceController extends AbstractController
         }
     }
 
-    // ---------------- HEALTH ----------------
-
+    // =============================================
+    // HEALTH CHECK
+    // =============================================
     #[Route('/api/face/health', name: 'api_face_health', methods: ['GET'])]
     public function health(): JsonResponse
     {
@@ -136,9 +137,9 @@ class FaceController extends AbstractController
         }
     }
 
-    // ---------------- SAVE ENCODING (manuel) ----------------
-    // Tu l'as utilisé avec curl /api/face/encoding/{id} ✅
-
+    // =============================================
+    // SAVE ENCODING (manuel)
+    // =============================================
     #[Route('/api/face/encoding/{id}', name: 'api_face_save_encoding', methods: ['POST'])]
     public function saveEncoding(int $id, Request $request): JsonResponse
     {
@@ -172,9 +173,9 @@ class FaceController extends AbstractController
         ]);
     }
 
-    // ---------------- CANDIDATES ----------------
-    // Renvoie la liste des encodings DB (pour debug / pour Flask)
-
+    // =============================================
+    // CANDIDATES - Liste des encodages
+    // =============================================
     #[Route('/api/face/candidates', name: 'api_face_candidates', methods: ['GET'])]
     public function candidates(): JsonResponse
     {
@@ -201,125 +202,183 @@ class FaceController extends AbstractController
         ]);
     }
 
-    // ---------------- REGISTER ----------------
-    // Symfony stocke, Flask calcule l'encoding via /encode
-
+    // =============================================
+    // ✅ REGISTER - Enregistrement facial avec synchronisation bidirectionnelle
+    // =============================================
     #[Route('/api/face/register/{id}', name: 'api_face_register', methods: ['POST'])]
     public function register(int $id, Request $request): JsonResponse
     {
+        $this->denyAccessUnlessGranted('ROLE_USER');
+
+        $user = $this->getUser();
+
+        if (!$user || !$user->getEmploye()) {
+            return $this->json([
+                'success' => false,
+                'error' => 'Compte non associé à un employé'
+            ], 403);
+        }
+
+        // 🔒 Empêche d'enregistrer pour un autre employé
+        if ($user->getEmploye()->getId() !== $id) {
+            return $this->json([
+                'success' => false,
+                'error' => 'Non autorisé'
+            ], 403);
+        }
+
         $imageB64 = $this->extractImageBase64($request);
         if ($imageB64 === null) {
-            return $this->json(['success' => false, 'error' => 'Missing "image" (file upload or JSON field)'], 400);
+            return $this->json([
+                'success' => false,
+                'error' => 'Image manquante'
+            ], 400);
         }
 
         $employe = $this->employeRepo->find($id);
         if (!$employe) {
-            return $this->json(['success' => false, 'error' => "Employe $id not found"], 404);
+            return $this->json([
+                'success' => false,
+                'error' => "Employé $id introuvable"
+            ], 404);
         }
 
+        // 🔁 Supprimer ancien encodage si existe
         $existing = $this->faceEncodingRepo->findOneBy(['employe' => $employe]);
         if ($existing) {
-            return $this->json(['success' => false, 'error' => "Employee $id already registered"], 409);
+            $this->em->remove($existing);
+            $this->em->flush();
         }
 
+        // 🔄 Appel au service Flask pour encoder le visage
         $flaskRes = $this->callFlaskPost('/encode', ['image' => $imageB64], 20.0);
 
         if (!$flaskRes['network_ok']) {
-            return $this->json(['success' => false, 'flask' => ['url' => $flaskRes['url'], 'error' => $flaskRes['body']]], 502);
+            return $this->json([
+                'success' => false,
+                'error' => 'Service IA indisponible',
+                'details' => $flaskRes['body']
+            ], 502);
         }
 
-        if (!$flaskRes['ok']) {
-            return $this->json(['success' => false, 'flask' => $flaskRes], $flaskRes['status']);
+        if (!$flaskRes['ok'] || !is_array($flaskRes['body'])) {
+            return $this->json([
+                'success' => false,
+                'error' => 'Erreur réponse IA',
+                'flask' => $flaskRes
+            ], 502);
         }
 
-        $body = is_array($flaskRes['body']) ? $flaskRes['body'] : null;
+        $body = $flaskRes['body'];
+
+        if (($body['success'] ?? false) !== true) {
+            return $this->json([
+                'success' => false,
+                'error' => $body['error'] ?? 'Encodage impossible'
+            ], 400);
+        }
+
         $encoding = $body['encoding'] ?? null;
 
-        if (!is_array($encoding) || count($encoding) === 0) {
-            return $this->json(['success' => false, 'error' => 'Flask did not return a valid encoding', 'flask' => $flaskRes], 502);
+        if (!is_array($encoding) || count($encoding) !== 128) {
+            return $this->json([
+                'success' => false,
+                'error' => 'Encodage invalide retourné par Flask'
+            ], 502);
         }
 
+        // =============================================
+        // ✅ CRÉATION AVEC SYNCHRONISATION BIDIRECTIONNELLE
+        // =============================================
+        
+        // 1. Créer l'entité FaceEncoding
         $face = new FaceEncoding();
-        $face->setEmploye($employe);
         $face->setEncoding(json_encode($encoding, JSON_THROW_ON_ERROR));
+        
+        // 2. 🔥 UNE SEULE LIGNE SUFFIT !
+        //    setFaceEncoding() synchronise automatiquement les deux côtés
+        $employe->setFaceEncoding($face);
 
+        // 3. Persister et flush
         $this->em->persist($face);
         $this->em->flush();
 
         return $this->json([
-            'success'     => true,
-            'employee_id' => (string) $id,
-            'stored'      => 'symfony_db',
-        ], 200);
+            'success' => true,
+            'employee_id' => (string)$id,
+            'stored' => 'symfony_db'
+        ]);
     }
 
-    // ---------------- RECOGNIZE ----------------
+    // =============================================
+    // RECOGNIZE - Reconnaissance faciale
+    // =============================================
     #[Route('/api/face/recognize', name: 'api_face_recognize', methods: ['POST'])]
-public function recognize(Request $request): JsonResponse
-{
-    $imageB64 = $this->extractImageBase64($request);
-    if ($imageB64 === null) {
-        return $this->json(['success' => false, 'error' => 'Missing "image"'], 400);
-    }
+    public function recognize(Request $request): JsonResponse
+    {
+        $imageB64 = $this->extractImageBase64($request);
+        if ($imageB64 === null) {
+            return $this->json(['success' => false, 'error' => 'Missing "image"'], 400);
+        }
 
-    $rows = $this->faceEncodingRepo->findAll();
-    if (!$rows) {
+        $rows = $this->faceEncodingRepo->findAll();
+        if (!$rows) {
+            return $this->json([
+                'success'     => false,
+                'employee_id' => null,
+                'confidence'  => 0.0,
+                'distance'    => null,
+                'reason'      => 'no_known_faces_in_db',
+            ], 200);
+        }
+
+        $candidates = [];
+        foreach ($rows as $row) {
+            $emp = $row->getEmploye();
+            if (!$emp) continue;
+
+            $decoded = json_decode($row->getEncoding(), true);
+            if (!is_array($decoded) || count($decoded) === 0) continue;
+
+            $candidates[] = [
+                'employee_id' => (string) $emp->getId(),
+                'encoding'    => $decoded,
+            ];
+        }
+
+        $flaskRes = $this->callFlaskPost('/match', [
+            'image'      => $imageB64,
+            'candidates' => $candidates,
+            'threshold'  => 0.50,
+        ], 25.0);
+
+        if (!$flaskRes['network_ok']) {
+            return $this->json([
+                'success' => false,
+                'flask'   => [
+                    'url'   => $flaskRes['url'],
+                    'error' => $flaskRes['body'],
+                ],
+            ], 502);
+        }
+
+        $body = is_array($flaskRes['body']) ? $flaskRes['body'] : [];
+
+        $employeeId = $body['employee_id'] ?? null;
+        $confidence = $body['confidence'] ?? 0.0;
+        $distance   = $body['distance'] ?? null;
+
         return $this->json([
-            'success'     => false,
-            'employee_id' => null,
-            'confidence'  => 0.0,
-            'distance'    => null,
-            'reason'      => 'no_known_faces_in_db',
+            'success'     => $employeeId !== null,
+            'employee_id' => $employeeId,
+            'confidence'  => $confidence,
+            'distance'    => $distance,
         ], 200);
     }
 
-    $candidates = [];
-    foreach ($rows as $row) {
-        $emp = $row->getEmploye();
-        if (!$emp) continue;
-
-        $decoded = json_decode($row->getEncoding(), true);
-        if (!is_array($decoded) || count($decoded) === 0) continue;
-
-        $candidates[] = [
-            'employee_id' => (string) $emp->getId(),
-            'encoding'    => $decoded,
-        ];
-    }
-
-    $flaskRes = $this->callFlaskPost('/match', [
-        'image'      => $imageB64,
-        'candidates' => $candidates,
-        'threshold'  => 0.50, // seuil plus strict
-    ], 25.0);
-
-    if (!$flaskRes['network_ok']) {
-        return $this->json([
-            'success' => false,
-            'flask'   => [
-                'url'   => $flaskRes['url'],
-                'error' => $flaskRes['body'],
-            ],
-        ], 502);
-    }
-
-    $body = is_array($flaskRes['body']) ? $flaskRes['body'] : [];
-
-    $employeeId = $body['employee_id'] ?? null;
-    $confidence = $body['confidence'] ?? 0.0;
-    $distance   = $body['distance'] ?? null;
-
-    return $this->json([
-        'success'     => $employeeId !== null,
-        'employee_id' => $employeeId,
-        'confidence'  => $confidence,
-        'distance'    => $distance,
-    ], 200);
-}
-
-
-    // ---------------- RESET DB ----------------
-
+    // =============================================
+    // RESET - Supprimer tous les encodages
+    // =============================================
     #[Route('/api/face/reset', name: 'api_face_reset', methods: ['POST'])]
     public function resetDbFaces(): JsonResponse
     {

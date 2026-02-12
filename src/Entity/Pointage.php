@@ -32,6 +32,9 @@ class Pointage
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $photo_capture = null;
 
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $methode = null;
+
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 8, nullable: true)]
     private ?string $latitude = null;
 
@@ -131,6 +134,18 @@ class Pointage
         $this->photo_capture = $photo_capture;
 
         return $this;
+    }
+    public function getMethode(): ?string
+    {
+    return $this->methode;
+     }
+
+    public function setMethode(?string $methode): self
+    {
+         $this->methode = $methode;
+
+    return $this;
+    
     }
 
     public function getLatitude(): ?string

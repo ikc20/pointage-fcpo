@@ -10,8 +10,10 @@ services:
             - '../src/Entity/'
             - '../src/Kernel.php'
 
-   
-
     App\Service\QrCode:
         arguments:
             $projectDir: '%kernel.project_dir%'
+            
+    App\Controller\PointageController:
+        arguments:
+            $faceLimiter: '@limiter.face_api'

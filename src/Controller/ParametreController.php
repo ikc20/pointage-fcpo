@@ -15,6 +15,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 class ParametreController extends AbstractController
 {
     #[Route('/', name: 'parametre_index', methods: ['GET'])]
+    
     public function index(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $categorie = $request->query->get('categorie');
@@ -49,6 +50,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/{id}', name: 'parametre_show', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function show(Parametre $parametre): JsonResponse
     {
         return $this->json([
@@ -58,6 +60,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/cle/{cle}', name: 'parametre_by_cle', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function getByCle(string $cle, EntityManagerInterface $em): JsonResponse
     {
         $parametre = $em->getRepository(Parametre::class)->findOneBy(['cle' => $cle]);
@@ -76,6 +79,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/', name: 'parametre_create', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function create(
         Request $request,
         EntityManagerInterface $em,
@@ -120,6 +124,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/{id}', name: 'parametre_update', methods: ['PUT'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function update(
         Request $request,
         Parametre $parametre,
@@ -162,6 +167,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/{id}', name: 'parametre_delete', methods: ['DELETE'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function delete(Parametre $parametre, EntityManagerInterface $em): JsonResponse
     {
         $em->remove($parametre);
@@ -174,6 +180,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/categories', name: 'parametre_categories', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function getCategories(EntityManagerInterface $em): JsonResponse
     {
         $categories = $em->getRepository(Parametre::class)->createQueryBuilder('p')
@@ -192,6 +199,7 @@ class ParametreController extends AbstractController
     }
 
     #[Route('/batch/update', name: 'parametre_batch_update', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function batchUpdate(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
