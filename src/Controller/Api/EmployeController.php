@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api; 
 
 use App\Entity\Employe;
 use Doctrine\ORM\EntityManagerInterface;
@@ -119,6 +119,38 @@ class EmployeController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
+
+    /**
+ *  STATS POUR L'EMPLOYÉ (utilisé par HomeScreen)
+ */
+#[Route('/{id}/stats', methods: ['GET'])]
+#[IsGranted('view', 'employe')]
+public function stats(Employe $employe): JsonResponse
+{
+    $user = $this->getUser();
+    
+    // Vérification que l'utilisateur ne voit que ses propres stats
+    if (!$this->isGranted('ROLE_ADMIN') && $user->getEmploye() !== $employe) {
+        return $this->json(['success' => false, 'message' => 'Accès non autorisé'], 403);
+    }
+
+    // LE CHAMP IMPORTANT - true si visage enregistré
+    $hasFaceEncoding = $employe->getFaceEncoding() !== null;
+    
+    return $this->json([
+        'success' => true,
+        'data' => [
+            'hasFaceEncoding' => $hasFaceEncoding,
+            // Autres données (optionnel)
+            'todayStatus' => 'INCONNU',
+            'todayPointagesCount' => 0,
+            'pendingAbsences' => 0,
+            'totalAbsenceDays' => 0,
+            'nextAbsence' => null,
+            'joursRestants' => 25,
+        ]
+    ]);
+}
 
     // DÉTAIL (Admin ou employé concerné)
     

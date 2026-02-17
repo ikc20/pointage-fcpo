@@ -21,9 +21,7 @@ class LocationFraudController extends AbstractController
         private EmployeRepository $employeRepo
     ) {}
 
-    // =============================================
-    // 1. TABLEAU DE BORD PRINCIPAL
-    // =============================================
+
     #[Route('/', name: 'admin_location_dashboard', methods: ['GET'])]
     public function dashboard(): JsonResponse
     {

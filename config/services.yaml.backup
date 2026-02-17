@@ -6,7 +6,7 @@ services:
         autowire: true
         autoconfigure: true
 
-    # Alias RateLimiter
+    # Alias pour RateLimiterFactory
     Symfony\Component\RateLimiter\RateLimiterFactory $faceLimiter: '@limiter.face_api'
 
     # PointageController
@@ -14,12 +14,12 @@ services:
         arguments:
             $faceLimiter: '@limiter.face_api'
 
-    # FaceController (CORRECTION CLÉ)
+    # FaceController - CORRIGÉ
     App\Controller\Api\FaceController:
         arguments:
-            $faceServiceUrl: '%face_service_url%'
+             $faceServiceUrl: '%face_service_url%'
 
-    # Autowiring global
+    # Auto-chargement
     App\:
         resource: '../src/'
         exclude:

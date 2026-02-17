@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api;
 
 use App\Repository\UserRepository;
-use Doctrine\ORM\EntityManagerInterface; // ✅ AJOUTER
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,7 +19,7 @@ class AuthController extends AbstractController
         UserRepository $userRepo,
         UserPasswordHasherInterface $passwordHasher,
         JWTTokenManagerInterface $jwtManager,
-        EntityManagerInterface $em // ✅ AJOUTER
+        EntityManagerInterface $em
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
@@ -57,7 +57,7 @@ class AuthController extends AbstractController
         }
 
         $user->setLastLogin(new \DateTime());
-        $em->flush(); // utilisation de EntityManagerInterface
+        $em->flush();
 
         $token = $jwtManager->create($user);
 

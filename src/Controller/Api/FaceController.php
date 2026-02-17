@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api;
 
 use App\Entity\FaceEncoding;
 use App\Repository\EmployeRepository;

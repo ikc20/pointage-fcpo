@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Controller;
+namespace App\Controller\Api; 
 
 use App\Entity\Employe;
 use App\Entity\Pointage;
