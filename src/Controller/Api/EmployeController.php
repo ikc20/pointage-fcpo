@@ -3,6 +3,9 @@
 namespace App\Controller\Api; 
 
 use App\Entity\Employe;
+use App\Entity\Pointage;
+use App\Repository\PlanningRepository;
+use App\Repository\PointageRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -15,9 +18,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[Route('/api/employes')]
 class EmployeController extends AbstractController
 {
-  
     // LISTE DES EMPLOYÉS (Admin uniquement)
-  
     #[Route('', methods: ['GET'])]
     #[Route('/', methods: ['GET'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -32,9 +33,7 @@ class EmployeController extends AbstractController
         ]);
     }
 
-  
     // CRÉATION (Admin uniquement)
-   
     #[Route('', methods: ['POST'])]
     #[Route('/', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -52,7 +51,6 @@ class EmployeController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        // Champs requis
         $required = ['nom', 'prenom', 'email', 'poste', 'telephone'];
         foreach ($required as $field) {
             if (empty($data[$field])) {
@@ -63,7 +61,6 @@ class EmployeController extends AbstractController
             }
         }
 
-        // Vérification unicité email
         if ($em->getRepository(Employe::class)->findOneBy(['email' => $data['email']])) {
             return $this->json([
                 'success' => false,
@@ -78,14 +75,12 @@ class EmployeController extends AbstractController
         $employe->setPoste($data['poste']);
         $employe->setTelephone($data['telephone']);
 
-        // Date embauche (optionnel)
         $employe->setDateEmbauche(
             isset($data['date_embauche'])
                 ? new \DateTime($data['date_embauche'])
                 : new \DateTime()
         );
 
-        // Matricule optionnel
         if (!empty($data['matricule'])) {
             if ($em->getRepository(Employe::class)->findOneBy(['matricule' => $data['matricule']])) {
                 return $this->json([
@@ -96,7 +91,6 @@ class EmployeController extends AbstractController
             $employe->setMatricule($data['matricule']);
         }
 
-        // Validation
         $errors = $validator->validate($employe);
         if (count($errors) > 0) {
             $messages = [];
@@ -119,41 +113,103 @@ class EmployeController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
-
     /**
- *  STATS POUR L'EMPLOYÉ (utilisé par HomeScreen)
- */
-#[Route('/{id}/stats', methods: ['GET'])]
-#[IsGranted('view', 'employe')]
-public function stats(Employe $employe): JsonResponse
-{
-    $user = $this->getUser();
-    
-    // Vérification que l'utilisateur ne voit que ses propres stats
-    if (!$this->isGranted('ROLE_ADMIN') && $user->getEmploye() !== $employe) {
-        return $this->json(['success' => false, 'message' => 'Accès non autorisé'], 403);
+     * STATS POUR L'EMPLOYÉ (utilisé par HomeScreen)
+     * AVEC PLANNING ACTIF, STATUT RÉEL ET GESTION DES RETARDS
+     */
+    #[Route('/{id}/stats', methods: ['GET'])]
+    #[IsGranted('view', 'employe')]
+    public function stats(
+        Employe $employe, 
+        PointageRepository $pointageRepo,
+        PlanningRepository $planningRepo
+    ): JsonResponse {
+        $user = $this->getUser();
+        
+        if (!$this->isGranted('ROLE_ADMIN') && $user->getEmploye() !== $employe) {
+            return $this->json(['success' => false, 'message' => 'Accès non autorisé'], 403);
+        }
+
+        $hasFaceEncoding = $employe->getFaceEncoding() !== null;
+        
+        // Récupérer le planning actif
+        $planning = $planningRepo->findForToday();
+        
+        // Récupérer les pointages du jour
+        $today = new \DateTime();
+        $todayStart = (clone $today)->setTime(0, 0, 0);
+        $todayEnd = (clone $today)->setTime(23, 59, 59);
+        
+        $pointages = $pointageRepo->findForEmployeBetweenDates(
+            $employe,
+            $todayStart,
+            $todayEnd
+        );
+        
+        $todayStatus = 'ABSENT';
+        $lastPointage = null;
+        $todayPointagesCount = count($pointages);
+        $estEnRetard = false;
+        
+        if ($todayPointagesCount > 0) {
+            usort($pointages, fn($a, $b) => $b->getDateHeure() <=> $a->getDateHeure());
+            $lastPointage = $pointages[0];
+            
+            if ($lastPointage->getType() === Pointage::TYPE_ENTREE) {
+                $todayStatus = 'PRESENT';
+                
+                // Vérifier si c'est un retard
+                if ($planning) {
+                    $heureEntree = $lastPointage->getDateHeure();
+                    $heureDebutPlanning = $planning->getHeureDebut();
+                    
+                    // Créer une DateTime avec la date d'aujourd'hui et l'heure du planning
+                    $heureDebut = clone $heureEntree;
+                    $heureDebut->setTime(
+                        (int)$heureDebutPlanning->format('H'),
+                        (int)$heureDebutPlanning->format('i'),
+                        0
+                    );
+                    
+                    // Comparer les heures
+                    if ($heureEntree > $heureDebut) {
+                        $estEnRetard = true;
+                    }
+                }
+            } else {
+                $todayStatus = 'ABSENT';
+            }
+        }
+        
+        return $this->json([
+            'success' => true,
+            'data' => [
+                'hasFaceEncoding' => $hasFaceEncoding,
+                'todayStatus' => $todayStatus,
+                'estEnRetard' => $estEnRetard,
+                'lastPointage' => $lastPointage ? [
+                    'type' => $lastPointage->getType(),
+                    'date_heure' => $lastPointage->getDateHeure()->format('c'),
+                ] : null,
+                'todayPointagesCount' => $todayPointagesCount,
+                'pendingAbsences' => 0,
+                'totalAbsenceDays' => 0,
+                'nextAbsence' => null,
+                'joursRestants' => 25,
+                'planning' => $planning ? [
+                    'type' => $planning->getType(),
+                    'type_label' => $planning->getTypeLabel(),
+                    'heure_debut' => $planning->getHeureDebut()?->format('H:i'),
+                    'heure_fin' => $planning->getHeureFin()?->format('H:i'),
+                    'pause_debut' => $planning->getPauseDebut()?->format('H:i'),
+                    'pause_fin' => $planning->getPauseFin()?->format('H:i'),
+                    'pause_obligatoire' => $planning->isPauseObligatoire(),
+                ] : null,
+            ]
+        ]);
     }
 
-    // LE CHAMP IMPORTANT - true si visage enregistré
-    $hasFaceEncoding = $employe->getFaceEncoding() !== null;
-    
-    return $this->json([
-        'success' => true,
-        'data' => [
-            'hasFaceEncoding' => $hasFaceEncoding,
-            // Autres données (optionnel)
-            'todayStatus' => 'INCONNU',
-            'todayPointagesCount' => 0,
-            'pendingAbsences' => 0,
-            'totalAbsenceDays' => 0,
-            'nextAbsence' => null,
-            'joursRestants' => 25,
-        ]
-    ]);
-}
-
     // DÉTAIL (Admin ou employé concerné)
-    
     #[Route('/{id}', methods: ['GET'])]
     #[IsGranted('view', 'employe')]
     public function show(Employe $employe): JsonResponse
@@ -164,9 +220,7 @@ public function stats(Employe $employe): JsonResponse
         ]);
     }
 
-   
     // MODIFICATION (Admin uniquement) 
-    
     #[Route('/{id}', methods: ['PUT', 'PATCH'])]
     #[IsGranted('ROLE_ADMIN')]
     public function update(
@@ -220,14 +274,11 @@ public function stats(Employe $employe): JsonResponse
         ]);
     }
 
-   
     // SUPPRESSION (Admin uniquement)
-    
     #[Route('/{id}', methods: ['DELETE'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Employe $employe, EntityManagerInterface $em): JsonResponse
     {
-        // Vérifier si l'employé est lié à un utilisateur
         if ($employe->getUser()) {
             return $this->json([
                 'success' => false,
@@ -235,7 +286,6 @@ public function stats(Employe $employe): JsonResponse
             ], Response::HTTP_CONFLICT);
         }
 
-        // Vérifier si l'employé a des pointages
         if ($employe->getPointages()->count() > 0) {
             return $this->json([
                 'success' => false,
@@ -252,16 +302,15 @@ public function stats(Employe $employe): JsonResponse
         ]);
     }
 
-   
-    // HISTORIQUE POINTAGES (Employé connecté ou Admin)
- 
+    // HISTORIQUE POINTAGES avec PAGINATION
     #[Route('/{id}/historique-pointages', methods: ['GET'])]
     #[IsGranted('view', 'employe')]
-    public function historique(Employe $employe): JsonResponse
-    {
+    public function historique(
+        Employe $employe, 
+        Request $request
+    ): JsonResponse {
         $user = $this->getUser();
         
-        // Vérification que l'utilisateur peut voir cet historique
         if (!$this->isGranted('ROLE_ADMIN') && $user->getEmploye() !== $employe) {
             return $this->json([
                 'success' => false,
@@ -269,9 +318,45 @@ public function stats(Employe $employe): JsonResponse
             ], Response::HTTP_FORBIDDEN);
         }
 
+        $page = max(1, (int) $request->query->get('page', 1));
+        $limit = min(50, max(1, (int) $request->query->get('limit', 10)));
+        $offset = ($page - 1) * $limit;
+
+        $pointages = $employe->getPointages();
+        $total = count($pointages);
+        
+        $pointagesArray = $pointages->toArray();
+        usort($pointagesArray, fn($a, $b) => $b->getDateHeure() <=> $a->getDateHeure());
+        
+        $paginatedPointages = array_slice($pointagesArray, $offset, $limit);
+        
+        $historique = [];
+        foreach ($paginatedPointages as $pointage) {
+            $date = $pointage->getDateHeure()->format('Y-m-d');
+            if (!isset($historique[$date])) {
+                $historique[$date] = [
+                    'date' => $date,
+                    'pointages' => []
+                ];
+            }
+            $historique[$date]['pointages'][] = $pointage->toArray();
+        }
+        
+        $historique = array_values($historique);
+
         return $this->json([
             'success' => true,
-            'historique' => $employe->getHistoriquePointagesParDate()
+            'data' => [
+                'items' => $historique,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $limit,
+                    'total_items' => $total,
+                    'total_pages' => ceil($total / $limit),
+                    'has_next_page' => $page < ceil($total / $limit),
+                    'has_previous_page' => $page > 1
+                ]
+            ]
         ]);
     }
 }

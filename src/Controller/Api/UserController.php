@@ -4,6 +4,7 @@ namespace App\Controller\Api;
 
 use App\Entity\User;
 use App\Entity\Employe;
+use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -12,6 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/users')]
 class UserController extends AbstractController
@@ -62,7 +64,6 @@ class UserController extends AbstractController
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
-        // Vérification des champs requis
         if (!isset($data['email']) || !isset($data['password'])) {
             return $this->json([
                 'success' => false,
@@ -70,7 +71,6 @@ class UserController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        // Vérifier si l'email existe déjà
         $existingUser = $em->getRepository(User::class)->findOneBy(['email' => $data['email']]);
         if ($existingUser) {
             return $this->json([
@@ -88,14 +88,11 @@ class UserController extends AbstractController
         $user->setCreatedAt(new \DateTime());
         $user->setUpdatedAt(new \DateTime());
 
-        // Hash du mot de passe
         $hashedPassword = $passwordHasher->hashPassword($user, $data['password']);
         $user->setPassword($hashedPassword);
 
-        // Définition des rôles
         $user->setRoles($data['roles'] ?? ['ROLE_USER']);
 
-        // Associer un employé si spécifié
         if (isset($data['employe_id']) && $data['employe_id'] !== null) {
             $employe = $em->getRepository(Employe::class)->find($data['employe_id']);
             if ($employe) {
@@ -103,7 +100,6 @@ class UserController extends AbstractController
             }
         }
 
-        // Validation
         $errors = $validator->validate($user);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -140,9 +136,7 @@ class UserController extends AbstractController
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
-        // Mise à jour des champs
         if (isset($data['email'])) {
-            // Vérifier si le nouvel email n'est pas déjà utilisé
             $existingUser = $em->getRepository(User::class)->findOneBy(['email' => $data['email']]);
             if ($existingUser && $existingUser->getId() !== $user->getId()) {
                 return $this->json([
@@ -158,18 +152,15 @@ class UserController extends AbstractController
         if (isset($data['telephone'])) $user->setTelephone($data['telephone']);
         if (isset($data['is_active'])) $user->setIsActive($data['is_active']);
 
-        // Mise à jour du mot de passe
         if (isset($data['password']) && !empty($data['password'])) {
             $hashedPassword = $passwordHasher->hashPassword($user, $data['password']);
             $user->setPassword($hashedPassword);
         }
 
-        // Mise à jour des rôles
         if (isset($data['roles'])) {
             $user->setRoles($data['roles']);
         }
 
-        // Mise à jour de l'association employé
         if (array_key_exists('employe_id', $data)) {
             if ($data['employe_id'] === null) {
                 $user->setEmploye(null);
@@ -188,7 +179,6 @@ class UserController extends AbstractController
 
         $user->setUpdatedAt(new \DateTime());
 
-        // Validation
         $errors = $validator->validate($user);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -216,7 +206,6 @@ class UserController extends AbstractController
     #[Route('/{id}', name: 'user_delete', methods: ['DELETE'])]
     public function delete(User $user, EntityManagerInterface $em): JsonResponse
     {
-        // Vérifier si l'utilisateur est associé à un employé
         if ($user->getEmploye()) {
             return $this->json([
                 'success' => false,
@@ -247,6 +236,47 @@ class UserController extends AbstractController
             'success' => true,
             'message' => $user->isActive() ? 'Utilisateur activé' : 'Utilisateur désactivé',
             'is_active' => $user->isActive()
+        ]);
+    }
+
+    // =============================================
+    // CHANGER LE MOT DE PASSE (Admin uniquement)
+    // =============================================
+    #[Route('/{id}/change-password', name: 'user_change_password', methods: ['PUT'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function changePassword(
+        int $id,
+        Request $request,
+        UserRepository $userRepo,
+        UserPasswordHasherInterface $passwordHasher,
+        EntityManagerInterface $em
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+        
+        if (empty($data['password'])) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Mot de passe requis'
+            ], Response::HTTP_BAD_REQUEST);
+        }
+        
+        $user = $userRepo->find($id);
+        if (!$user) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Utilisateur non trouvé'
+            ], Response::HTTP_NOT_FOUND);
+        }
+        
+        $hashedPassword = $passwordHasher->hashPassword($user, $data['password']);
+        $user->setPassword($hashedPassword);
+        $user->setUpdatedAt(new \DateTime());
+        
+        $em->flush();
+        
+        return $this->json([
+            'success' => true,
+            'message' => 'Mot de passe modifié avec succès'
         ]);
     }
 

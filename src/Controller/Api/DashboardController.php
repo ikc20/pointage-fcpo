@@ -51,7 +51,7 @@ class DashboardController extends AbstractController
             ->andWhere('a.date_fin >= :today')
             ->andWhere('a.statut = :statut')
             ->setParameter('today', $today)
-            ->setParameter('statut', 'APPROUVEE')
+            ->setParameter('statut', Absence::STATUT_VALIDE)
             ->select('COUNT(a.id)')
             ->getQuery()
             ->getSingleScalarResult();

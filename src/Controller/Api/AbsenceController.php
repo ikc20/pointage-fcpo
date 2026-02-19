@@ -7,7 +7,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/absences')]
@@ -123,6 +123,7 @@ class AbsenceController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function byEmploye(
         int $id,
+        Request $request,
         EntityManagerInterface $em
     ): JsonResponse {
         $user = $this->getUser();
@@ -135,15 +136,36 @@ class AbsenceController extends AbstractController
             ], 403);
         }
 
+        // Paramètres de pagination
+        $page = max(1, (int) $request->query->get('page', 1));
+        $limit = min(50, max(1, (int) $request->query->get('limit', 10)));
+        $offset = ($page - 1) * $limit;
+
+        // Compter le total des absences
+        $total = $em->getRepository(Absence::class)->count(['employe' => $id]);
+
+        // Récupérer les absences avec pagination
         $absences = $em->getRepository(Absence::class)
             ->findBy(
                 ['employe' => $id],
-                ['date_debut' => 'DESC']
+                ['date_debut' => 'DESC'],
+                $limit,
+                $offset
             );
 
         return $this->json([
             'success' => true,
-            'data' => array_map([$this, 'serializeAbsence'], $absences)
+            'data' => [
+                'items' => array_map([$this, 'serializeAbsence'], $absences),
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $limit,
+                    'total_items' => $total,
+                    'total_pages' => ceil($total / $limit),
+                    'has_next_page' => $page < ceil($total / $limit),
+                    'has_previous_page' => $page > 1
+                ]
+            ]
         ]);
     }
 

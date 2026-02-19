@@ -38,6 +38,26 @@ class PointageRepository extends ServiceEntityRepository
     }
 
     /**
+     * Trouve les pointages d'un employé entre deux dates
+     * Utilisé par EmployeController::stats()
+     */
+    public function findForEmployeBetweenDates(
+        Employe $employe, 
+        \DateTimeInterface $debut, 
+        \DateTimeInterface $fin
+    ): array {
+        return $this->createQueryBuilder('p')
+            ->where('p.employe = :employe')
+            ->andWhere('p.date_heure BETWEEN :debut AND :fin')
+            ->setParameter('employe', $employe)
+            ->setParameter('debut', $debut)
+            ->setParameter('fin', $fin)
+            ->orderBy('p.date_heure', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Historique des pointages d'un employé avec filtre de date
      */
     public function findHistoriqueEmploye(int $employeId, \DateTime $debut = null, \DateTime $fin = null): array

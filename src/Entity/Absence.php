@@ -132,4 +132,15 @@ class Absence
      { 
         $this->employe = $employe; return $this;
          }
+
+
+         public function getCreatedAt(): ?\DateTime
+{
+    return $this->created_at;
+}
+
+public function getUpdatedAt(): ?\DateTime
+{
+    return $this->updated_at;
+}
 }
