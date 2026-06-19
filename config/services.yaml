@@ -1,18 +1,31 @@
+parameters:
+    face_service_url: '%env(FACE_SERVICE_URL)%'
+
 services:
     _defaults:
         autowire: true
         autoconfigure: true
 
+    # Alias RateLimiter
+    Symfony\Component\RateLimiter\RateLimiterFactory $faceLimiter: '@limiter.face_api'
+
+    # PointageController
+    App\Controller\Api\PointageController:
+        arguments:
+            $faceLimiter: '@limiter.face_api'
+
+    # FaceController (CORRECTION CLÉ)
+    App\Controller\Api\FaceController:
+        arguments:
+            $faceServiceUrl: '%face_service_url%'
+
+    # Autowiring global
     App\:
         resource: '../src/'
         exclude:
             - '../src/DependencyInjection/'
             - '../src/Entity/'
             - '../src/Kernel.php'
-
-    App\Service\FaceRecognition:
-        arguments:
-            $pythonServiceUrl: '%env(FACE_RECOGNITION_SERVICE_URL)%'
 
     App\Service\QrCode:
         arguments:

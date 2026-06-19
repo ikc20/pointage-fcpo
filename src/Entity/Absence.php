@@ -7,151 +7,140 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: AbsenceRepository::class)]
+#[ORM\HasLifecycleCallbacks]
 class Absence
 {
+    public const STATUT_EN_ATTENTE = 'EN_ATTENTE';
+    public const STATUT_VALIDE = 'VALIDÉ';
+    public const STATUT_REJETE = 'REJETÉ';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
     private ?int $id = null;
 
     #[ORM\Column(length: 50)]
-    private ?string $type = null;
+    private string $type = 'CONGE';
 
     #[ORM\Column(type: Types::DATE_MUTABLE)]
-    private ?\DateTime $date_debut = null;
+    private \DateTime $date_debut;
 
     #[ORM\Column(type: Types::DATE_MUTABLE)]
-    private ?\DateTime $date_fin = null;
+    private \DateTime $date_fin;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $motif = null;
 
     #[ORM\Column(length: 20)]
-    private ?string $statut = null;
+    private string $statut = self::STATUT_EN_ATTENTE;
 
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $justificatif = null;
 
     #[ORM\Column]
-    private ?\DateTime $created_at = null;
+    private \DateTime $created_at;
 
     #[ORM\Column(nullable: true)]
     private ?\DateTime $updated_at = null;
 
     #[ORM\ManyToOne(inversedBy: 'absences')]
     #[ORM\JoinColumn(nullable: false)]
-    private ?Employe $employe = null;
+    private Employe $employe;
+
+    #[ORM\PrePersist]
+    public function onCreate(): void
+    {
+        $this->created_at = new \DateTime();
+    }
+
+    #[ORM\PreUpdate]
+    public function onUpdate(): void
+    {
+        $this->updated_at = new \DateTime();
+    }
+
 
     public function getId(): ?int
     {
-        return $this->id;
-    }
+         return $this->id; 
+         }
 
-    public function getType(): ?string
-    {
+    public function getType(): string 
+    { 
         return $this->type;
-    }
+         }
+    public function setType(string $type): self
+     {
+         $this->type = $type;
+          return $this;
+           }
 
-    public function setType(string $type): static
+    public function getDateDebut(): \DateTime 
+    { 
+        return $this->date_debut; 
+        }
+    public function setDateDebut(\DateTime $date): self 
+    { 
+        $this->date_debut = $date; 
+        return $this; 
+        }
+
+    public function getDateFin(): \DateTime 
     {
-        $this->type = $type;
-
-        return $this;
-    }
-
-    public function getDateDebut(): ?\DateTime
-    {
-        return $this->date_debut;
-    }
-
-    public function setDateDebut(\DateTime $date_debut): static
-    {
-        $this->date_debut = $date_debut;
-
-        return $this;
-    }
-
-    public function getDateFin(): ?\DateTime
-    {
-        return $this->date_fin;
-    }
-
-    public function setDateFin(\DateTime $date_fin): static
-    {
-        $this->date_fin = $date_fin;
-
-        return $this;
-    }
+         return $this->date_fin;
+          }
+    public function setDateFin(\DateTime $date): self
+     {
+         $this->date_fin = $date; return $this;
+          }
 
     public function getMotif(): ?string
-    {
-        return $this->motif;
-    }
-
-    public function setMotif(?string $motif): static
-    {
+     {
+         return $this->motif;
+          }
+    public function setMotif(?string $motif): self
+     { 
         $this->motif = $motif;
+         return $this;
+          }
 
-        return $this;
-    }
-
-    public function getStatut(): ?string
-    {
+    public function getStatut(): string 
+    { 
         return $this->statut;
-    }
-
-    public function setStatut(string $statut): static
-    {
-        $this->statut = $statut;
-
-        return $this;
-    }
+     }
+    public function setStatut(string $statut): self
+     {
+         $this->statut = $statut; 
+         return $this;
+          }
 
     public function getJustificatif(): ?string
-    {
-        return $this->justificatif;
-    }
-
-    public function setJustificatif(?string $justificatif): static
-    {
-        $this->justificatif = $justificatif;
-
+     {
+         return $this->justificatif; 
+         }
+    public function setJustificatif(?string $justificatif): self
+     { 
+        $this->justificatif = $justificatif; 
         return $this;
-    }
+         }
 
-    public function getCreatedAt(): ?\DateTime
-    {
-        return $this->created_at;
-    }
-
-    public function setCreatedAt(\DateTime $created_at): static
-    {
-        $this->created_at = $created_at;
-
-        return $this;
-    }
-
-    public function getUpdatedAt(): ?\DateTime
-    {
-        return $this->updated_at;
-    }
-
-    public function setUpdatedAt(?\DateTime $updated_at): static
-    {
-        $this->updated_at = $updated_at;
-
-        return $this;
-    }
-
-    public function getEmploye(): ?Employe
-    {
+    public function getEmploye(): Employe 
+    { 
         return $this->employe;
-    }
+         }
+    public function setEmploye(Employe $employe): self
+     { 
+        $this->employe = $employe; return $this;
+         }
 
-    public function setEmploye(?Employe $employe): static
-    {
-        $this->employe = $employe;
 
-        return $this;
-    }
+         public function getCreatedAt(): ?\DateTime
+{
+    return $this->created_at;
+}
+
+public function getUpdatedAt(): ?\DateTime
+{
+    return $this->updated_at;
+}
 }

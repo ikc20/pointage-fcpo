@@ -24,21 +24,21 @@ class FaceEncoding
     private string $encoding;
 
     #[ORM\Column(type: Types::DATETIME_MUTABLE)]
-private \DateTimeInterface $createdAt;
+    private \DateTimeInterface $createdAt;
 
-#[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
-private ?\DateTimeInterface $updatedAt = null;
-    
-public function __construct()
-{
-    $this->createdAt = new \DateTime();
-}
+    #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTimeInterface $updatedAt = null;
 
-#[ORM\PreUpdate]
-public function onPreUpdate(): void
-{
-    $this->updatedAt = new \DateTime();
-}
+    public function __construct()
+    {
+        $this->createdAt = new \DateTime();
+    }
+
+    #[ORM\PreUpdate]
+    public function onPreUpdate(): void
+    {
+        $this->updatedAt = new \DateTime();
+    }
 
     public function getId(): ?int
     {
@@ -50,9 +50,14 @@ public function onPreUpdate(): void
         return $this->employe;
     }
 
-    public function setEmploye(Employe $employe): self
+    public function setEmploye(?Employe $employe): self
     {
         $this->employe = $employe;
+
+        if ($employe && $employe->getFaceEncoding() !== $this) {
+            $employe->setFaceEncoding($this);
+        }
+
         return $this;
     }
 
@@ -69,12 +74,11 @@ public function onPreUpdate(): void
 
     public function getCreatedAt(): \DateTimeInterface
     {
-    return $this->createdAt;
-     }
+        return $this->createdAt;
+    }
 
     public function getUpdatedAt(): ?\DateTimeInterface
-     {
-    return $this->updatedAt;
-     }
-
+    {
+        return $this->updatedAt;
+    }
 }

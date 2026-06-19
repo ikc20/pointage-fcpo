@@ -1,5 +1,4 @@
 <?php
-// src/Entity/Pointage.php
 namespace App\Entity;
 
 use App\Repository\PointageRepository;
@@ -9,6 +8,9 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: PointageRepository::class)]
 class Pointage
 {
+    public const TYPE_ENTREE = 'ENTREE';
+    public const TYPE_SORTIE = 'SORTIE';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -23,6 +25,9 @@ class Pointage
     #[ORM\Column(nullable: true)]
     private ?float $confidence = null;
 
+    #[ORM\Column(type: 'float', nullable: true)]
+    private ?float $distance = null;
+
     #[ORM\Column(length: 45, nullable: true)]
     private ?string $ip_address = null;
 
@@ -31,6 +36,9 @@ class Pointage
 
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $photo_capture = null;
+
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $methode = null;
 
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 8, nullable: true)]
     private ?string $latitude = null;
@@ -45,13 +53,29 @@ class Pointage
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private ?Employe $employe = null;
 
+
+    #[ORM\Column(nullable: true)]
+    private ?bool $estHeureSupp = null;
+
+    #[ORM\ManyToOne(targetEntity: Planning::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
+    private ?Planning $planning = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?bool $estEnPause = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeInterface $pause_debut = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeInterface $pause_fin = null;
+
     public function __construct()
     {
         $this->date_heure = new \DateTime();
         $this->created_at = new \DateTime();
     }
 
-    // ========== GETTERS ET SETTERS ==========
 
     public function getId(): ?int
     {
@@ -66,7 +90,6 @@ class Pointage
     public function setDateHeure(\DateTimeInterface $date_heure): static
     {
         $this->date_heure = $date_heure;
-
         return $this;
     }
 
@@ -77,11 +100,10 @@ class Pointage
 
     public function setType(string $type): static
     {
-        if (!in_array($type, ['ENTREE', 'SORTIE'])) {
+        if (!in_array($type, [self::TYPE_ENTREE, self::TYPE_SORTIE])) {
             throw new \InvalidArgumentException("Le type doit être 'ENTREE' ou 'SORTIE'");
         }
         $this->type = $type;
-
         return $this;
     }
 
@@ -93,7 +115,17 @@ class Pointage
     public function setConfidence(?float $confidence): static
     {
         $this->confidence = $confidence;
+        return $this;
+    }
 
+    public function getDistance(): ?float
+    {
+        return $this->distance;
+    }
+
+    public function setDistance(?float $distance): self
+    {
+        $this->distance = $distance;
         return $this;
     }
 
@@ -105,7 +137,6 @@ class Pointage
     public function setIpAddress(?string $ip_address): static
     {
         $this->ip_address = $ip_address;
-
         return $this;
     }
 
@@ -117,7 +148,6 @@ class Pointage
     public function setDeviceInfo(?string $device_info): static
     {
         $this->device_info = $device_info;
-
         return $this;
     }
 
@@ -129,7 +159,17 @@ class Pointage
     public function setPhotoCapture(?string $photo_capture): static
     {
         $this->photo_capture = $photo_capture;
+        return $this;
+    }
 
+    public function getMethode(): ?string
+    {
+        return $this->methode;
+    }
+
+    public function setMethode(?string $methode): self
+    {
+        $this->methode = $methode;
         return $this;
     }
 
@@ -141,7 +181,6 @@ class Pointage
     public function setLatitude(?string $latitude): static
     {
         $this->latitude = $latitude;
-
         return $this;
     }
 
@@ -153,7 +192,6 @@ class Pointage
     public function setLongitude(?string $longitude): static
     {
         $this->longitude = $longitude;
-
         return $this;
     }
 
@@ -165,11 +203,8 @@ class Pointage
     public function setCreatedAt(\DateTimeInterface $created_at): static
     {
         $this->created_at = $created_at;
-
         return $this;
     }
-
-    // ========== RELATION AVEC EMPLOYE ==========
 
     public function getEmploye(): ?Employe
     {
@@ -179,11 +214,65 @@ class Pointage
     public function setEmploye(?Employe $employe): static
     {
         $this->employe = $employe;
-
         return $this;
     }
 
-    // ========== MÉTHODES UTILITAIRES ==========
+
+    public function getEstHeureSupp(): ?bool
+    {
+        return $this->estHeureSupp;
+    }
+
+    public function setEstHeureSupp(?bool $estHeureSupp): self
+    {
+        $this->estHeureSupp = $estHeureSupp;
+        return $this;
+    }
+
+    public function getPlanning(): ?Planning
+    {
+        return $this->planning;
+    }
+
+    public function setPlanning(?Planning $planning): self
+    {
+        $this->planning = $planning;
+        return $this;
+    }
+
+    public function getEstEnPause(): ?bool
+    {
+        return $this->estEnPause;
+    }
+
+    public function setEstEnPause(?bool $estEnPause): self
+    {
+        $this->estEnPause = $estEnPause;
+        return $this;
+    }
+
+    public function getPauseDebut(): ?\DateTimeInterface
+    {
+        return $this->pause_debut;
+    }
+
+    public function setPauseDebut(?\DateTimeInterface $pause_debut): self
+    {
+        $this->pause_debut = $pause_debut;
+        return $this;
+    }
+
+    public function getPauseFin(): ?\DateTimeInterface
+    {
+        return $this->pause_fin;
+    }
+
+    public function setPauseFin(?\DateTimeInterface $pause_fin): self
+    {
+        $this->pause_fin = $pause_fin;
+        return $this;
+    }
+
 
     public function toArray(): array
     {
@@ -196,6 +285,7 @@ class Pointage
             'type_libelle' => $this->getTypeLibelle(),
             'confidence' => $this->confidence,
             'confidence_pourcentage' => $this->confidence ? round($this->confidence * 100, 1) : null,
+            'distance' => $this->distance,
             'ip_address' => $this->ip_address,
             'device_info' => $this->device_info,
             'photo_capture' => $this->photo_capture,
@@ -206,12 +296,19 @@ class Pointage
             'employe_nom_complet' => $this->employe ? $this->employe->getNomComplet() : null,
             'employe_matricule' => $this->employe ? $this->employe->getMatricule() : null,
             'employe_poste' => $this->employe ? $this->employe->getPoste() : null,
+            'est_heure_supp' => $this->estHeureSupp,
+            'planning_id' => $this->planning?->getId(),
+            'planning_type' => $this->planning?->getType(),
+            'planning_label' => $this->planning?->getTypeLabel(),
+            'est_en_pause' => $this->estEnPause,
+            'pause_debut' => $this->pause_debut?->format('H:i'),
+            'pause_fin' => $this->pause_fin?->format('H:i'),
         ];
     }
 
     public function getTypeLibelle(): string
     {
-        return $this->type === 'ENTREE' ? 'Entrée' : 'Sortie';
+        return $this->type === self::TYPE_ENTREE ? 'Entrée' : 'Sortie';
     }
 
     public function getJourSemaine(): string

@@ -1,0 +1,32 @@
+parameters:
+    face_service_url: '%env(FACE_SERVICE_URL)%'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    # Alias pour RateLimiterFactory
+    Symfony\Component\RateLimiter\RateLimiterFactory $faceLimiter: '@limiter.face_api'
+
+    # PointageController
+    App\Controller\Api\PointageController:
+        arguments:
+            $faceLimiter: '@limiter.face_api'
+
+    # FaceController - CORRIGÉ
+    App\Controller\Api\FaceController:
+        arguments:
+             $faceServiceUrl: '%face_service_url%'
+
+    # Auto-chargement
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+
+    App\Service\QrCode:
+        arguments:
+            $projectDir: '%kernel.project_dir%'

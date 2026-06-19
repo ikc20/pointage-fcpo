@@ -7,6 +7,15 @@ framework:
 
     #esi: true
     #fragments: true
+    
+    #  RATE LIMITER - Protection brute-force 
+    rate_limiter:
+        face_api:
+            policy: 'token_bucket'
+            limit: 5
+            rate:
+                interval: '1 minute'
+                amount: 5  #  Plus explicite
 
 when@test:
     framework:

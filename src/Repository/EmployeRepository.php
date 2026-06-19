@@ -22,7 +22,6 @@ class EmployeRepository extends ServiceEntityRepository
         parent::__construct($registry, Employe::class);
     }
 
-    // ========== MÉTHODES DE RECHERCHE ==========
 
     /**
      * Recherche des employés par nom, prénom, email ou matricule
@@ -78,7 +77,6 @@ class EmployeRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    // ========== MÉTHODES DE STATISTIQUES ==========
 
     /**
      * Compte le nombre total d'employés
@@ -172,7 +170,6 @@ class EmployeRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    // ========== MÉTHODES DE PAGINATION ==========
 
     /**
      * Pagination avec filtres optionnels
@@ -239,7 +236,6 @@ class EmployeRepository extends ServiceEntityRepository
         return (int)$qb->getQuery()->getSingleScalarResult();
     }
 
-    // ========== MÉTHODES DE RAPPORTS ==========
 
     /**
      * Rapport mensuel des présences
@@ -281,7 +277,6 @@ class EmployeRepository extends ServiceEntityRepository
             ->getArrayResult();
     }
 
-    // ========== MÉTHODES DE MAINTENANCE ==========
 
     /**
      * Nettoie les employés sans pointage (optionnel)
@@ -309,5 +304,34 @@ class EmployeRepository extends ServiceEntityRepository
         }
 
         return $count;
+    }
+
+    /**
+     * Récupère tous les encodages faciaux des employés
+     * Utilisé par PointageController pour la reconnaissance faciale
+     * 
+     * @return array Liste des candidats avec employee_id et encoding
+     */
+    public function getAllEncodings(): array
+    {
+        $employes = $this->createQueryBuilder('e')
+            ->leftJoin('e.faceEncoding', 'f')
+            ->addSelect('f')
+            ->where('f.encoding IS NOT NULL')
+            ->getQuery()
+            ->getResult();
+
+        $candidates = [];
+        foreach ($employes as $employe) {
+            $faceEncoding = $employe->getFaceEncoding();
+            if ($faceEncoding && $faceEncoding->getEncoding()) {
+                $candidates[] = [
+                    'employee_id' => (string) $employe->getId(),
+                    'encoding' => json_decode($faceEncoding->getEncoding(), true)
+                ];
+            }
+        }
+
+        return $candidates;
     }
 }
