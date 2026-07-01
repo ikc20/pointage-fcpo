@@ -81,7 +81,7 @@ class UserController extends AbstractController
         if (isset($data['employe_id'])) {
             $employe = $em->getRepository(Employe::class)->find($data['employe_id']);
             if ($employe) {
-                $user->setEmployeLinked($employe);
+                $user->setEmploye($employe);
             }
         }
         
@@ -134,11 +134,11 @@ class UserController extends AbstractController
         // Associer/dissocier un employé
         if (isset($data['employe_id'])) {
             if ($data['employe_id'] === null) {
-                $user->setEmployeLinked(null);
+                $user->setEmploye(null);
             } else {
                 $employe = $em->getRepository(Employe::class)->find($data['employe_id']);
                 if ($employe) {
-                    $user->setEmployeLinked($employe);
+                    $user->setEmploye($employe);
                 }
             }
         }
@@ -256,10 +256,10 @@ class UserController extends AbstractController
             'created_at' => $user->getCreatedAt() ? $user->getCreatedAt()->format('Y-m-d H:i:s') : null,
             'last_login' => $user->getLastLogin() ? $user->getLastLogin()->format('Y-m-d H:i:s') : null,
             'updated_at' => $user->getUpdatedAt() ? $user->getUpdatedAt()->format('Y-m-d H:i:s') : null,
-            'employe_linked' => $user->getEmployeLinked() ? [
-                'id' => $user->getEmployeLinked()->getId(),
-                'nom_complet' => $user->getEmployeLinked()->getNomComplet(),
-                'matricule' => $user->getEmployeLinked()->getMatricule()
+            'employe_linked' => $user->getEmploye() ? [
+                'id' => $user->getEmploye()->getId(),
+                'nom_complet' => $user->getEmploye()->getNomComplet(),
+                'matricule' => $user->getEmploye()->getMatricule()
             ] : null
         ];
     }
